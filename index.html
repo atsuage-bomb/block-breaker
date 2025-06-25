@@ -1,0 +1,262 @@
+html_code = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>ブロック崩し</title>
+<style>
+    body {
+        background-color: #1e1e1e;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        color: white;
+        font-family: sans-serif;
+    }
+    #gameContainer {
+        border: 2px solid #555;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+    }
+    #infoPanel {
+        display: flex;
+        justify-content: space-between;
+        width: 800px;
+        font-size: 20px;
+        margin-top: 10px;
+    }
+</style>
+</head>
+<body>
+
+<h1>HTML5 ブロック崩し</h1>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="infoPanel">
+    <div id="score">SCORE: 0</div>
+    <div id="lives">LIVES: 3</div>
+</div>
+<p>ゲーム画面をクリックしてから、矢印キーで操作、スペースキーでスタート</p>
+
+<script>
+    // ------------------------------
+    // 1. 初期設定
+    // ------------------------------
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const livesElement = document.getElementById('lives');
+
+    // ゲームの定数
+    const PADDLE_WIDTH = 100;
+    const PADDLE_HEIGHT = 15;
+    const PADDLE_SPEED = 7;
+    const BALL_RADIUS = 10;
+    const BLOCK_ROWS = 5;
+    const BLOCK_COLS = 10;
+    const BLOCK_WIDTH = 75;
+    const BLOCK_HEIGHT = 20;
+    const BLOCK_PADDING = 5;
+    const BLOCK_OFFSET_TOP = 50;
+    const BLOCK_OFFSET_LEFT = 30;
+    const BLOCK_COLORS = ['#ff4040', '#ffA500', '#40ff40', '#4040ff', '#ffffff'];
+
+    // ゲームの状態変数
+    let paddleX = (canvas.width - PADDLE_WIDTH) / 2;
+    let ballX = canvas.width / 2;
+    let ballY = canvas.height - 50;
+    let ballSpeedX = 5;
+    let ballSpeedY = -5;
+    let score = 0;
+    let lives = 3;
+    let gameStarted = false;
+    let gameOver = false;
+    let rightPressed = false;
+    let leftPressed = false;
+
+    // ブロックの配列を生成
+    const blocks = [];
+    for (let c = 0; c < BLOCK_COLS; c++) {
+        blocks[c] = [];
+        for (let r = 0; r < BLOCK_ROWS; r++) {
+            blocks[c][r] = { x: 0, y: 0, status: 1, color: BLOCK_COLORS[r] };
+        }
+    }
+
+    // ------------------------------
+    // 2. イベントリスナー
+    // ------------------------------
+    document.addEventListener('keydown', keyDownHandler, false);
+    document.addEventListener('keyup', keyUpHandler, false);
+
+    function keyDownHandler(e) {
+        if (e.key === 'Right' || e.key === 'ArrowRight') {
+            rightPressed = true;
+        } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+            leftPressed = true;
+        } else if (e.key === ' ' || e.key === 'Spacebar') {
+            if (!gameStarted && !gameOver) {
+                gameStarted = true;
+            }
+        }
+    }
+
+    function keyUpHandler(e) {
+        if (e.key === 'Right' || e.key === 'ArrowRight') {
+            rightPressed = false;
+        } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+            leftPressed = false;
+        }
+    }
+
+    // ------------------------------
+    // 3. 描画関数
+    // ------------------------------
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.rect(paddleX, canvas.height - PADDLE_HEIGHT - 20, PADDLE_WIDTH, PADDLE_HEIGHT);
+        ctx.fillStyle = '#cccccc';
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffff00';
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawBlocks() {
+        for (let c = 0; c < BLOCK_COLS; c++) {
+            for (let r = 0; r < BLOCK_ROWS; r++) {
+                if (blocks[c][r].status === 1) {
+                    const blockX = (c * (BLOCK_WIDTH + BLOCK_PADDING)) + BLOCK_OFFSET_LEFT;
+                    const blockY = (r * (BLOCK_HEIGHT + BLOCK_PADDING)) + BLOCK_OFFSET_TOP;
+                    blocks[c][r].x = blockX;
+                    blocks[c][r].y = blockY;
+                    ctx.beginPath();
+                    ctx.rect(blockX, blockY, BLOCK_WIDTH, BLOCK_HEIGHT);
+                    ctx.fillStyle = blocks[c][r].color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            }
+        }
+    }
+
+    function drawInfoText(text) {
+        ctx.font = '48px sans-serif';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    }
+
+    // ------------------------------
+    // 4. ゲームロジック
+    // ------------------------------
+    function collisionDetection() {
+        for (let c = 0; c < BLOCK_COLS; c++) {
+            for (let r = 0; r < BLOCK_ROWS; r++) {
+                const b = blocks[c][r];
+                if (b.status === 1) {
+                    if (ballX > b.x && ballX < b.x + BLOCK_WIDTH && ballY > b.y && ballY < b.y + BLOCK_HEIGHT) {
+                        ballSpeedY = -ballSpeedY;
+                        b.status = 0;
+                        score++;
+                        if (score === BLOCK_ROWS * BLOCK_COLS) {
+                            drawInfoText('GAME CLEAR!');
+                            gameOver = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function update() {
+        if (gameOver) return;
+
+        // パドルの移動
+        if (rightPressed && paddleX < canvas.width - PADDLE_WIDTH) {
+            paddleX += PADDLE_SPEED;
+        } else if (leftPressed && paddleX > 0) {
+            paddleX -= PADDLE_SPEED;
+        }
+
+        if (!gameStarted) {
+            ballX = paddleX + PADDLE_WIDTH / 2;
+            return;
+        }
+
+        // ボールの移動と壁との衝突
+        if (ballX + ballSpeedX > canvas.width - BALL_RADIUS || ballX + ballSpeedX < BALL_RADIUS) {
+            ballSpeedX = -ballSpeedX;
+        }
+        if (ballY + ballSpeedY < BALL_RADIUS) {
+            ballSpeedY = -ballSpeedY;
+        } else if (ballY + ballSpeedY > canvas.height - BALL_RADIUS - 20) {
+            // パドルとの衝突
+            if (ballX > paddleX && ballX < paddleX + PADDLE_WIDTH) {
+                ballSpeedY = -ballSpeedY;
+                // パドルの中心からの距離で反射角度を少し変える
+                let deltaX = ballX - (paddleX + PADDLE_WIDTH / 2);
+                ballSpeedX = deltaX * 0.2;
+            } else {
+                // ゲームオーバー（ボールを落とした）
+                lives--;
+                if (lives <= 0) {
+                    drawInfoText('GAME OVER');
+                    gameOver = true;
+                } else {
+                    gameStarted = false;
+                    ballX = canvas.width / 2;
+                    ballY = canvas.height - 50;
+                    paddleX = (canvas.width - PADDLE_WIDTH) / 2;
+                }
+            }
+        }
+
+        ballX += ballSpeedX;
+        ballY += ballSpeedY;
+
+        collisionDetection();
+
+        // UIの更新
+        scoreElement.textContent = `SCORE: ${score}`;
+        livesElement.textContent = `LIVES: ${lives}`;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgb(20, 20, 40)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawBlocks();
+        drawPaddle();
+        drawBall();
+
+        if(!gameStarted && !gameOver){
+            drawInfoText('Press SPACE to Start');
+        }
+    }
+
+    // ------------------------------
+    // 5. メインループ
+    // ------------------------------
+    function gameLoop() {
+        update();
+        draw();
+        if (!gameOver) {
+            requestAnimationFrame(gameLoop);
+        }
+    }
+
+    // ゲーム開始
+    gameLoop();
+
+</script>
+</body>
+</html>
+"""
