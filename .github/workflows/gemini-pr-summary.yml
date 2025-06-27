@@ -1,0 +1,62 @@
+# .github/workflows/gemini-pr-summary.yml
+
+name: 'Gemini PR Summary'
+
+on:
+  pull_request:
+    types: [opened] # Pull Requestがオープンされた時に実行
+
+permissions:
+  contents: read
+  pull-requests: write # PRにコメントするために必要
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      # ステップ1: リポジトリのコードをチェックアウト
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ステップ2: Gemini CLIをインストール
+      - name: Install Gemini CLI
+        run: |
+          # Go言語のインストール
+          sudo apt-get update && sudo apt-get install -y golang-go
+          # Gemini CLIのインストール
+          go install github.com/google/generative-ai-go/cmd/genai@latest
+          # PATHを通す
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      # ステップ3: 変更内容を取得して要約を実行
+      - name: Summarize Pull Request
+        id: summarize
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # 変更内容の差分（diff）を取得
+          git fetch origin ${{ github.base_ref }} --depth=1
+          DIFF=$(git diff origin/${{ github.base_ref }})
+
+          # Geminiに要約を依頼するプロンプトを作成
+          PROMPT="以下のコード変更を日本語で分かりやすく要約し、レビューのポイントを箇条書きで教えてください。\n\`\`\`diff\n${DIFF}\n\`\`\`"
+
+          # Gemini CLIを実行し、結果を変数に保存
+          SUMMARY=$(echo "$PROMPT" | genai -)
+          
+          # 結果を後続のステップで使えるように出力
+          echo "summary_text<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      # ステップ4: Pull Requestにコメントとして投稿
+      - name: Add Comment to Pull Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### ✨ AIによる変更内容のサマリー\n\n${{ steps.summarize.outputs.summary_text }}`
+            })
